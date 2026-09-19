@@ -1,4 +1,4 @@
--- // EGG SCANNER & MINI-DEX (Multi-Plot Edition) \\ --
+-- // EGG SCANNER & MINI-DEX (Smart Search Edition) \\ --
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
@@ -108,7 +108,7 @@ local function addExplorerLine(propertyName, value, color)
     line.Parent = explorerFrame
 end
 
--- Function to safely read properties
+-- Function to safely read properties (Now handles Models properly!)
 local function scanObject(obj, plotName)
     clearExplorer()
     
@@ -121,11 +121,20 @@ local function scanObject(obj, plotName)
     addExplorerLine("ClassName", obj.ClassName, Color3.fromRGB(255, 200, 0))
     addExplorerLine("Name", obj.Name, Color3.fromRGB(255, 255, 255))
     
-    pcall(function() addExplorerLine("Position", tostring(obj.Position), Color3.fromRGB(100, 255, 255)) end)
-    pcall(function() addExplorerLine("Material", tostring(obj.Material), Color3.fromRGB(150, 255, 150)) end)
-    pcall(function() addExplorerLine("Color", tostring(obj.Color), Color3.fromRGB(255, 150, 150)) end)
-    pcall(function() addExplorerLine("Size", tostring(obj.Size), Color3.fromRGB(255, 255, 150)) end)
-    pcall(function() addExplorerLine("Transparency", tostring(obj.Transparency), Color3.fromRGB(200, 200, 200)) end)
+    -- If it's a model, get the position of its primary part
+    if obj:IsA("Model") then
+        local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+        if primary then
+            pcall(function() addExplorerLine("Position", tostring(primary.Position), Color3.fromRGB(100, 255, 255)) end)
+        end
+    else
+        -- If it's a regular part
+        pcall(function() addExplorerLine("Position", tostring(obj.Position), Color3.fromRGB(100, 255, 255)) end)
+        pcall(function() addExplorerLine("Material", tostring(obj.Material), Color3.fromRGB(150, 255, 150)) end)
+        pcall(function() addExplorerLine("Color", tostring(obj.Color), Color3.fromRGB(255, 150, 150)) end)
+        pcall(function() addExplorerLine("Size", tostring(obj.Size), Color3.fromRGB(255, 255, 150)) end)
+        pcall(function() addExplorerLine("Transparency", tostring(obj.Transparency), Color3.fromRGB(200, 200, 200)) end)
+    end
     
     addExplorerLine("--- ATTRIBUTES ---", "", Color3.fromRGB(255, 100, 0))
     local attributes = obj:GetAttributes()
@@ -143,7 +152,7 @@ local function scanObject(obj, plotName)
     end
 end
 
--- NEW FUNCTION: Finds the closest egg to the player across ALL plots
+-- SMART SEARCH: Finds any object with "Egg" in its name near the player
 local function findClosestEgg()
     local plotsFolder = workspace:WaitForChild("Plots")
     local character = player.Character
@@ -152,27 +161,29 @@ local function findClosestEgg()
     local rootPos = character.HumanoidRootPart.Position
     local closestEgg = nil
     local closestPlotName = nil
-    local shortestDistance = 25 -- Max distance (in studs) the scanner will reach
+    local shortestDistance = 50 -- Increased range to 50 studs
     
-    -- Loop through all folders inside the "Plots" folder
+    -- Loop through all plots
     for _, plotFolder in pairs(plotsFolder:GetChildren()) do
-        -- Look for an "Egg" inside this plot
-        local egg = plotFolder:FindFirstChild("Egg") 
-        -- If your egg is named something else (like "EggModel"), change "Egg" to that name above!
-        
-        if egg then
-            -- If the egg is a Model, find its center part
-            local eggPart = egg
-            if egg:IsA("Model") then
-                eggPart = egg.PrimaryPart or egg:FindFirstChildWhichIsA("BasePart")
-            end
-            
-            if eggPart then
-                local dist = (eggPart.Position - rootPos).Magnitude
-                if dist < shortestDistance then
-                    shortestDistance = dist
-                    closestEgg = egg
-                    closestPlotName = plotFolder.Name
+        -- Look through EVERYTHING inside the plot (models, parts, etc.)
+        for _, obj in pairs(plotFolder:GetDescendants()) do
+            -- If the object is a Part or Model, and has "egg" in its name (ignores uppercase/lowercase)
+            if (obj:IsA("Model") or obj:IsA("BasePart")) and string.find(string.lower(obj.Name), "egg") then
+                
+                -- Get the actual 3D position of this egg
+                local eggPart = obj
+                if obj:IsA("Model") then
+                    eggPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                end
+                
+                if eggPart then
+                    local dist = (eggPart.Position - rootPos).Magnitude
+                    -- If it's closer than the last egg we found, save this one
+                    if dist < shortestDistance then
+                        shortestDistance = dist
+                        closestEgg = obj
+                        closestPlotName = plotFolder.Name
+                    end
                 end
             end
         end
@@ -188,11 +199,11 @@ local function runPrediction()
     
     task.wait(1)
 
-    -- Find the closest egg
+    -- Find the closest egg using the Smart Search
     local egg, plotName = findClosestEgg()
 
     if not egg then
-        predictionText.Text = "No egg found nearby. Walk closer to a plot!"
+        predictionText.Text = "No egg found nearby. Make sure you are near an egg!"
         predictionText.TextColor3 = Color3.fromRGB(255, 100, 100)
         clearExplorer()
         addExplorerLine("STATUS", "Out of Range", Color3.fromRGB(255, 50, 50))
