@@ -1,4 +1,4 @@
--- // EGG SCANNER & MINI-DEX \\ --
+-- // EGG SCANNER & MINI-DEX (Multi-Plot Edition) \\ --
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
@@ -11,7 +11,7 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 -- 2. Create the Main Window
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 350, 0, 450)
-mainFrame.Position = UDim2.new(1, -370, 0.5, -225) -- Starts on the right side of screen
+mainFrame.Position = UDim2.new(1, -370, 0.5, -225) 
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
@@ -51,7 +51,7 @@ predictionText.BackgroundTransparency = 1
 predictionText.TextColor3 = Color3.fromRGB(255, 255, 255)
 predictionText.TextWrapped = true
 predictionText.TextScaled = true
-predictionText.Text = "Waiting for egg..."
+predictionText.Text = "Walk near an egg and Scan."
 predictionText.Font = Enum.Font.Gotham
 predictionText.Parent = predictionBox
 
@@ -66,7 +66,6 @@ explorerFrame.Parent = mainFrame
 local explorerCorner = Instance.new("UICorner")
 explorerCorner.Parent = explorerFrame
 
--- Automatic scrolling frame layout
 local uiLayout = Instance.new("UIListLayout")
 uiLayout.Padding = UDim.new(0, 2)
 uiLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -79,7 +78,7 @@ scanBtn.Position = UDim2.new(0, 10, 1, -50)
 scanBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
 scanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 scanBtn.TextScaled = true
-scanBtn.Text = "🔍 SCAN EGG"
+scanBtn.Text = "🔍 SCAN NEAREST EGG"
 scanBtn.Font = Enum.Font.GothamBold
 scanBtn.Parent = mainFrame
 
@@ -88,7 +87,6 @@ btnCorner.Parent = scanBtn
 
 -- // THE LOGIC // --
 
--- Function to clear the DEX list
 local function clearExplorer()
     for _, child in pairs(explorerFrame:GetChildren()) do
         if child:IsA("TextLabel") then
@@ -97,7 +95,6 @@ local function clearExplorer()
     end
 end
 
--- Function to add a line to the DEX
 local function addExplorerLine(propertyName, value, color)
     local line = Instance.new("TextLabel")
     line.Size = UDim2.new(1, -10, 0, 20)
@@ -111,8 +108,8 @@ local function addExplorerLine(propertyName, value, color)
     line.Parent = explorerFrame
 end
 
--- Function to safely read properties (Like DEX does)
-local function scanObject(obj)
+-- Function to safely read properties
+local function scanObject(obj, plotName)
     clearExplorer()
     
     if not obj then
@@ -120,18 +117,16 @@ local function scanObject(obj)
         return
     end
 
+    addExplorerLine("Plot Origin", plotName, Color3.fromRGB(255, 100, 255))
     addExplorerLine("ClassName", obj.ClassName, Color3.fromRGB(255, 200, 0))
     addExplorerLine("Name", obj.Name, Color3.fromRGB(255, 255, 255))
     
-    -- Safely check common properties using pcall
-    -- This is exactly how a DEX studies an instance without breaking the game
     pcall(function() addExplorerLine("Position", tostring(obj.Position), Color3.fromRGB(100, 255, 255)) end)
     pcall(function() addExplorerLine("Material", tostring(obj.Material), Color3.fromRGB(150, 255, 150)) end)
     pcall(function() addExplorerLine("Color", tostring(obj.Color), Color3.fromRGB(255, 150, 150)) end)
     pcall(function() addExplorerLine("Size", tostring(obj.Size), Color3.fromRGB(255, 255, 150)) end)
     pcall(function() addExplorerLine("Transparency", tostring(obj.Transparency), Color3.fromRGB(200, 200, 200)) end)
     
-    -- Check for Attributes (This is where game data is usually hidden)
     addExplorerLine("--- ATTRIBUTES ---", "", Color3.fromRGB(255, 100, 0))
     local attributes = obj:GetAttributes()
     if next(attributes) == nil then
@@ -142,27 +137,70 @@ local function scanObject(obj)
         end
     end
     
-    -- Check Children (Other parts/models inside the egg)
     addExplorerLine("--- CHILDREN ---", "", Color3.fromRGB(255, 100, 0))
     for _, child in pairs(obj:GetChildren()) do
         addExplorerLine("  [" .. child.ClassName .. "]", child.Name, Color3.fromRGB(200, 200, 255))
     end
 end
 
+-- NEW FUNCTION: Finds the closest egg to the player across ALL plots
+local function findClosestEgg()
+    local plotsFolder = workspace:WaitForChild("Plots")
+    local character = player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil, nil end
+    
+    local rootPos = character.HumanoidRootPart.Position
+    local closestEgg = nil
+    local closestPlotName = nil
+    local shortestDistance = 25 -- Max distance (in studs) the scanner will reach
+    
+    -- Loop through all folders inside the "Plots" folder
+    for _, plotFolder in pairs(plotsFolder:GetChildren()) do
+        -- Look for an "Egg" inside this plot
+        local egg = plotFolder:FindFirstChild("Egg") 
+        -- If your egg is named something else (like "EggModel"), change "Egg" to that name above!
+        
+        if egg then
+            -- If the egg is a Model, find its center part
+            local eggPart = egg
+            if egg:IsA("Model") then
+                eggPart = egg.PrimaryPart or egg:FindFirstChildWhichIsA("BasePart")
+            end
+            
+            if eggPart then
+                local dist = (eggPart.Position - rootPos).Magnitude
+                if dist < shortestDistance then
+                    shortestDistance = dist
+                    closestEgg = egg
+                    closestPlotName = plotFolder.Name
+                end
+            end
+        end
+    end
+    
+    return closestEgg, closestPlotName
+end
+
 -- Function to run the actual prediction
 local function runPrediction()
-    local plot = workspace:WaitForChild("Plots"):WaitForChild("plot")
-    local egg = plot:WaitForChild("Egg") -- Change "Egg" to whatever your part is named
-
-    -- Update GUI to show it's scanning
-    predictionText.Text = "Scanning..."
+    predictionText.Text = "Scanning nearby plots..."
     predictionText.TextColor3 = Color3.fromRGB(255, 255, 0)
     
-    -- Wait a second for visual effect
     task.wait(1)
 
+    -- Find the closest egg
+    local egg, plotName = findClosestEgg()
+
+    if not egg then
+        predictionText.Text = "No egg found nearby. Walk closer to a plot!"
+        predictionText.TextColor3 = Color3.fromRGB(255, 100, 100)
+        clearExplorer()
+        addExplorerLine("STATUS", "Out of Range", Color3.fromRGB(255, 50, 50))
+        return
+    end
+
     -- 1. Study the object like a DEX
-    scanObject(egg)
+    scanObject(egg, plotName)
 
     -- 2. Make a prediction based on what we found
     local predictionMsg = "Unable to determine contents."
@@ -185,5 +223,5 @@ local function runPrediction()
     predictionText.TextColor3 = predColor
 end
 
--- Connect the button click to the prediction function
+-- Connect the button click
 scanBtn.MouseButton1Click:Connect(runPrediction)
