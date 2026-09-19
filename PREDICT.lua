@@ -1,4 +1,4 @@
--- // EGG SCANNER & MINI-DEX (Smart Search Edition) \\ --
+-- // EGG SCANNER & MINI-DEX (Global Search & Deep Scan Edition) \\ --
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
@@ -26,7 +26,7 @@ title.Size = UDim2.new(1, 0, 0, 40)
 title.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
 title.TextColor3 = Color3.fromRGB(0, 255, 150)
 title.TextScaled = true
-title.Text = "🥚 EGG ANALYZER v1.0"
+title.Text = "🥚 EGG ANALYZER v2.0"
 title.Font = Enum.Font.Code
 title.Parent = mainFrame
 
@@ -108,8 +108,8 @@ local function addExplorerLine(propertyName, value, color)
     line.Parent = explorerFrame
 end
 
--- Function to safely read properties (Now handles Models properly!)
-local function scanObject(obj, plotName)
+-- Function to safely read properties and deep scan children
+local function scanObject(obj)
     clearExplorer()
     
     if not obj then
@@ -117,23 +117,16 @@ local function scanObject(obj, plotName)
         return
     end
 
-    addExplorerLine("Plot Origin", plotName, Color3.fromRGB(255, 100, 255))
     addExplorerLine("ClassName", obj.ClassName, Color3.fromRGB(255, 200, 0))
     addExplorerLine("Name", obj.Name, Color3.fromRGB(255, 255, 255))
     
-    -- If it's a model, get the position of its primary part
+    -- Get Position safely
+    local eggPart = obj
     if obj:IsA("Model") then
-        local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-        if primary then
-            pcall(function() addExplorerLine("Position", tostring(primary.Position), Color3.fromRGB(100, 255, 255)) end)
-        end
-    else
-        -- If it's a regular part
-        pcall(function() addExplorerLine("Position", tostring(obj.Position), Color3.fromRGB(100, 255, 255)) end)
-        pcall(function() addExplorerLine("Material", tostring(obj.Material), Color3.fromRGB(150, 255, 150)) end)
-        pcall(function() addExplorerLine("Color", tostring(obj.Color), Color3.fromRGB(255, 150, 150)) end)
-        pcall(function() addExplorerLine("Size", tostring(obj.Size), Color3.fromRGB(255, 255, 150)) end)
-        pcall(function() addExplorerLine("Transparency", tostring(obj.Transparency), Color3.fromRGB(200, 200, 200)) end)
+        eggPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+    end
+    if eggPart then
+        pcall(function() addExplorerLine("Position", tostring(eggPart.Position), Color3.fromRGB(100, 255, 255)) end)
     end
     
     addExplorerLine("--- ATTRIBUTES ---", "", Color3.fromRGB(255, 100, 0))
@@ -146,88 +139,101 @@ local function scanObject(obj, plotName)
         end
     end
     
+    -- Deep scan children (This will find your EggData folder!)
     addExplorerLine("--- CHILDREN ---", "", Color3.fromRGB(255, 100, 0))
     for _, child in pairs(obj:GetChildren()) do
         addExplorerLine("  [" .. child.ClassName .. "]", child.Name, Color3.fromRGB(200, 200, 255))
+        
+        -- If the child is a folder (like EggData), dig one level deeper!
+        if child:IsA("Folder") or child:IsA("Configuration") then
+            for _, subChild in pairs(child:GetChildren()) do
+                addExplorerLine("    [" .. subChild.ClassName .. "]", subChild.Name, Color3.fromRGB(180, 180, 220))
+                -- If it's a value object (StringValue, IntValue etc), show its value!
+                if subChild:IsA("ValueBase") then
+                    addExplorerLine("      Value", tostring(subChild.Value), Color3.fromRGB(255, 255, 100))
+                end
+            end
+        end
     end
 end
 
--- SMART SEARCH: Finds any object with "Egg" in its name near the player
+-- GLOBAL SEARCH: Finds any object with "Egg" in its name near the player
 local function findClosestEgg()
-    local plotsFolder = workspace:WaitForChild("Plots")
     local character = player.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil, nil end
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
     
     local rootPos = character.HumanoidRootPart.Position
     local closestEgg = nil
-    local closestPlotName = nil
-    local shortestDistance = 50 -- Increased range to 50 studs
+    local shortestDistance = 50 -- 50 stud range
     
-    -- Loop through all plots
-    for _, plotFolder in pairs(plotsFolder:GetChildren()) do
-        -- Look through EVERYTHING inside the plot (models, parts, etc.)
-        for _, obj in pairs(plotFolder:GetDescendants()) do
-            -- If the object is a Part or Model, and has "egg" in its name (ignores uppercase/lowercase)
-            if (obj:IsA("Model") or obj:IsA("BasePart")) and string.find(string.lower(obj.Name), "egg") then
+    -- Search the ENTIRE workspace, not just Plots
+    for _, obj in pairs(workspace:GetDescendants()) do
+        -- Must be a Model or Part, and have "egg" in the name
+        if (obj:IsA("Model") or obj:IsA("BasePart")) and string.find(string.lower(obj.Name), "egg") then
+            
+            -- Ignore things inside ReplicatedStorage/ServerStorage if they somehow got into workspace
+            -- (We only want the actual eggs sitting on the ground)
+            local eggPart = obj
+            if obj:IsA("Model") then
+                eggPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            end
                 
-                -- Get the actual 3D position of this egg
-                local eggPart = obj
-                if obj:IsA("Model") then
-                    eggPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                end
-                
-                if eggPart then
-                    local dist = (eggPart.Position - rootPos).Magnitude
-                    -- If it's closer than the last egg we found, save this one
-                    if dist < shortestDistance then
-                        shortestDistance = dist
-                        closestEgg = obj
-                        closestPlotName = plotFolder.Name
-                    end
+            if eggPart then
+                local dist = (eggPart.Position - rootPos).Magnitude
+                if dist < shortestDistance then
+                    shortestDistance = dist
+                    closestEgg = obj
                 end
             end
         end
     end
     
-    return closestEgg, closestPlotName
+    return closestEgg
 end
 
 -- Function to run the actual prediction
 local function runPrediction()
-    predictionText.Text = "Scanning nearby plots..."
+    predictionText.Text = "Scanning nearby environment..."
     predictionText.TextColor3 = Color3.fromRGB(255, 255, 0)
     
     task.wait(1)
 
-    -- Find the closest egg using the Smart Search
-    local egg, plotName = findClosestEgg()
+    local egg = findClosestEgg()
 
     if not egg then
-        predictionText.Text = "No egg found nearby. Make sure you are near an egg!"
+        predictionText.Text = "No egg found nearby. Walk closer to an egg!"
         predictionText.TextColor3 = Color3.fromRGB(255, 100, 100)
         clearExplorer()
         addExplorerLine("STATUS", "Out of Range", Color3.fromRGB(255, 50, 50))
         return
     end
 
-    -- 1. Study the object like a DEX
-    scanObject(egg, plotName)
+    -- 1. Deep Study the object
+    scanObject(egg)
 
     -- 2. Make a prediction based on what we found
     local predictionMsg = "Unable to determine contents."
     local predColor = Color3.fromRGB(255, 255, 255)
 
-    -- Check if the egg has a custom Attribute named "HiddenPet"
+    -- Check Attributes first
     if egg:GetAttribute("HiddenPet") ~= nil then
         local pet = egg:GetAttribute("HiddenPet")
         local rarity = egg:GetAttribute("Rarity") or "Unknown"
-        
         predictionMsg = "PREDICTION: " .. pet .. "\nRARITY: " .. rarity
         predColor = Color3.fromRGB(0, 255, 150)
     else
-        -- If no attribute is found, it's a mystery!
-        predictionMsg = "No hidden data detected. Contents are purely random."
-        predColor = Color3.fromRGB(255, 100, 100)
+        -- Check inside the EggData folder for a Value object (like a StringValue named "Pet")
+        local eggData = egg:FindFirstChild("EggData")
+        if eggData then
+            local petValue = eggData:FindFirstChild("Pet") or eggData:FindFirstChild("HiddenPet") or eggData:FindFirstChild("PetName")
+            if petValue and petValue:IsA("StringValue") then
+                predictionMsg = "PREDICTION: " .. petValue.Value
+                predColor = Color3.fromRGB(0, 255, 150)
+            end
+        else
+            predictionMsg = "No EggData or Attributes detected. Random contents."
+            predColor = Color3.fromRGB(255, 100, 100)
+        end
     end
 
     predictionText.Text = predictionMsg
